@@ -1,0 +1,71 @@
+<?php
+
+namespace App\Controller;
+
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Routing\Attribute\Route;
+
+class UserController extends AbstractController
+{
+    #[Route('/v1/account/register', name: 'app_user', methods: ['POST'])]
+    public function user(Request $request): Response
+    {
+        $requestData = json_decode($request->getContent(), true);
+
+        $code = $requestData['code'];
+        return new Response(json_encode([
+            'status' => 'error',
+            'message' => 'WIP',
+            'redirect' => $_ENV['OSU_CLIENT_URL']
+        ]));
+
+        $url_oauth = 'https://osu.ppy.sh/oauth/token';
+        $options_oauth = [
+            'http' => [
+                'header' => 'Content-type: application/x-www-form-urlencoded\r\n',
+                'method' => 'POST',
+                'content' => http_build_query([
+                    'client_id' => $_ENV['OSU_CLIENT_ID'],
+                    'client_secret' => $_ENV['OSU_CLIENT_SECRET'],
+                    'code' => $code,
+                    'grant_type' => 'authorization_code',
+                    'redirect_uri' => $_ENV['OSU_CLIENT_URL']
+                ]),
+            ],  
+        ];
+
+        try {
+            $result_oauth = file_get_contents($url_oauth, false, stream_context_create($options_oauth));
+        }
+        catch (\Exception $e) {
+            $response = new Response(json_encode([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'hint' => 'code is invalid (' . $code . ')'
+            ]));
+            return $response;
+        }
+        $result_oauth = json_decode($result_oauth, true);
+        // $response = new Response($result_oauth);
+
+        $url_me = 'https://osu.ppy.sh/api/v2/me/mania';
+        $options_me = [
+            'http' => [
+                'header' => implode("\r\n", ['Content-type: application/json', 'Authorization: Bearer ' . $result_oauth['access_token']]),
+                'method' => 'GET'
+            ],  
+        ];
+
+        $result_me = file_get_contents($url_me, false, stream_context_create($options_me));
+        $response = new Response(json_encode([
+            'status' => 'ok',
+            'data' => json_decode($result_me, true),
+            'redirect' => $_ENV['OSU_CLIENT_URL']
+        ]));
+
+        return $response;
+    }
+}

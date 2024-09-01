@@ -1,0 +1,116 @@
+<?php
+
+namespace App\Command;
+
+use App\Entity\BeatmapNew;
+use App\Repository\BeatmapRepository;
+use App\Repository\BeatmapNewRepository;
+use Doctrine\ORM\EntityManagerInterface;
+
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+
+class ConvertBeatmapDBCommand extends Command
+{
+    private $entityManager;
+    private $beatmapRepository;
+    private $beatmapNewRepository;
+
+    public function __construct(EntityManagerInterface $entityManager, BeatmapRepository $beatmapRepository, BeatmapNewRepository $beatmapNewRepository)
+    {
+        $this->entityManager = $entityManager;
+        $this->beatmapRepository = $beatmapRepository;
+        $this->beatmapNewRepository = $beatmapNewRepository;
+
+        parent::__construct();
+    }
+
+    protected function configure()
+    {
+        $this->setName('app:convert-beatmap')
+             ->setDescription('Convert');
+    }
+
+    function formatTime($timeInSeconds) {
+        $hours = floor($timeInSeconds / 3600);
+        $minutes = floor(($timeInSeconds % 3600) / 60);
+        $seconds = $timeInSeconds % 60;
+
+        $formattedTime = sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+
+        return $formattedTime;
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $index = 0;
+        
+        $count = $this->beatmapRepository->createQueryBuilder('e')
+        ->select('COUNT(e.beatmap_id)')
+        ->getQuery()
+        ->getSingleScalarResult();
+
+        $avg_sum = 0;
+        $done = 0;
+
+        while (true) {
+            $ts_start = microtime(true);
+            $beatmap = $this->beatmapRepository->findOneBy([], ['beatmap_id' => 'ASC']);
+            if ($beatmap) {
+                $hash = $beatmap->getFileMd5();
+                $data = file_get_contents('https://osu.ppy.sh/api/get_beatmaps?k=' . $_ENV['OSU_API_KEY'] . '&h=' . $hash);
+                try {
+                    $data = json_decode($data);
+                    if (count($data) > 0)
+                    {
+                        $data = $data[0];
+                        // $output->writeln($data);
+                        if ($data->mode == 3) {
+                            $new = new BeatmapNew();
+            
+                            $new->setBeatmapId($data->beatmap_id);
+                            $new->setBeatmapSetId($data->beatmapset_id);
+                            $new->setTitle($data->title);
+                            $new->setTitleUnicode($data->title_unicode);
+                            $new->setArtist($data->artist);
+                            $new->setArtistUnicode($data->artist_unicode);
+                            $new->setDifficulty($data->version);
+                            $new->setFileMd5($data->file_md5);
+                            $new->setCountNormal($data->count_normal);
+                            $new->setCountSlider($data->count_slider);
+                            $new->setCreatorId($data->creator_id);
+                            $new->setKeyCount($data->diff_size);
+    
+                            $this->entityManager->remove($beatmap);
+                            $this->entityManager->persist($new);
+                            $this->entityManager->flush();
+
+                            $ts_end = microtime(true);
+                            $index += 1;
+                            
+                            $time_taken = $ts_end - $ts_start;
+
+                            $avg_sum += $time_taken;
+                            $done += 1;
+
+                            $avg_time_taken = $avg_sum / $done;
+                            $eta = ($count - $index) * $avg_time_taken;
+
+                            $output->writeln('(' . $index . '/' . $count .') ETA: ' . $this->formatTime($eta) . ' - ' . $new->getArtist() . ' - ' . $new->getTitle() . ' [' . $new->getDifficulty() . ']');
+                        }
+                    }
+                }
+                catch (\Exception $e) {
+                    $output->writeln($e->getMessage());
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // php bin/console app:download-maps-command
+        return Command::SUCCESS;
+    }
+}
