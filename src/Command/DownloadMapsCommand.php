@@ -38,7 +38,7 @@ class DownloadMapsCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $timelimit = 550;
+        $timelimit = 55;
         $ts_start = microtime(true);
         while (true) {
             $queue_beatmap = $this->beatmapQueueRepository->findOnePending();
@@ -50,7 +50,7 @@ class DownloadMapsCommand extends Command
                 $this->entityManager->flush();
 
                 $hash = $queue_beatmap->getFileMd5();
-                
+                    
                 $data = file_get_contents('https://osu.ppy.sh/api/get_beatmaps?k=' . $_ENV['OSU_API_KEY'] . '&h=' . $hash . '&mods=0');
                 $data_half_time = file_get_contents('https://osu.ppy.sh/api/get_beatmaps?k=' . $_ENV['OSU_API_KEY'] . '&h=' . $hash . '&mods=256');
                 $data_double_time = file_get_contents('https://osu.ppy.sh/api/get_beatmaps?k=' . $_ENV['OSU_API_KEY'] . '&h=' . $hash . '&mods=64');
